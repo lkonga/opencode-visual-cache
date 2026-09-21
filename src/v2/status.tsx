@@ -4,18 +4,23 @@ import { createMemo, For, onMount, Show } from "solid-js"
 import type { Context } from "./types"
 import type { PanelApi, PanelSignals } from "../panel/panel-api"
 import { collectLastHitRate } from "./data"
-import { desaturateTo, fmtCompact, formatBalanceText, MAX_SAT, FALLBACK, visualWidth } from "../core"
+import { desaturateTo, formatBalanceText, MAX_SAT, FALLBACK, visualWidth } from "../core"
 import { createT } from "../i18n"
 import { mapTheme } from "./theme"
+import { buildFooterSegments, type FooterSegment } from "./footer-segments"
 
 const KV_PREFIX = "cache_panel"
 
 /**
  * 底部状态栏（prompt.footer.status）——对齐 V1 BottomStatusBar 统计段口径：
- * 单条命中率（最后一条有 token 的 assistant 消息）+ 趋势 + Tokens 总量 + 余额。
+ * 单条命中率（最后一条有 token 的 assistant 消息）+ Tokens 总量 + 余额。
  * 余额读共享 signals.balanceState（PluginRoot 驱动轮询）；provider 不支持余额时隐藏余额段（对齐 V1）。
  * 颜色经 mapTheme（V1 形状）——与侧边栏命中率颜色同源，保证两处一致。
  * 显隐受 signals.sectionBottom 控制（/cache-section 切换），启动时从 kv 恢复偏好（对齐 V1）。
+ *
+ * V2 差异：**不显示命中率趋势增量（↑/↓ N.N%）**——该差值随每条消息跳动，底部提示行噪声大于信息量。
+ * 稳定命中率 / Tokens / 余额保持原口径；V1 底部栏与侧边栏面板仍保留趋势（见 src/index.tsx）。
+ * 分段构造抽到 footer-segments.ts（纯函数）以便测试锁定该口径。
  */
 export function StatusView(props: {
   context: Context
@@ -55,14 +60,6 @@ export function StatusView(props: {
     return pal().error
   })
 
-  // 命中率趋势：最后一条与上一条的差值；|Δ| < 0.05 视为无变化（null = 不显示）
-  const trend = createMemo(() => {
-    const s = stats()
-    if (s.prevHitRate < 0 || s.hitRate < 0) return null
-    const d = s.hitRate - s.prevHitRate
-    return Math.abs(d) < 0.05 ? null : d
-  })
-
   // 余额文本（对齐 V1）：ok → 数值；loading → …；error → ⚠；idle → -
   const balanceText = createMemo(() => {
     const s = props.signals.balanceState()
@@ -72,25 +69,18 @@ export function StatusView(props: {
     return "-"
   })
 
-  const segs = createMemo<{ text: string; color: string | undefined }[]>(() => {
+  const segs = createMemo<FooterSegment[]>(() => {
     const s = stats()
-    const hr = s.hitRate >= 0 ? (Math.floor(s.hitRate * 10) / 10).toFixed(1) + "%" : "--"
-    const out: { text: string; color: string | undefined }[] = [
-      { text: t("barHit") + " ", color: pal().muted },
-      { text: hr, color: hitColor() },
-    ]
-    const tr = trend()
-    if (tr !== null) {
-      out.push({ text: " " + (tr > 0 ? "\u2191" : "\u2193") + Math.abs(tr).toFixed(1) + "%", color: tr > 0 ? pal().success : pal().error })
-    }
-    out.push({ text: " \u00b7 " + t("barTok") + " ", color: pal().muted })
-    out.push({ text: s ? fmtCompact(s.input + s.read + s.write) : "--", color: pal().text })
-    if (!props.signals.balanceUnsupported()) {
-      out.push({ text: " \u00b7 " + t("barBal") + " ", color: pal().muted })
-      out.push({ text: balanceText(), color: pal().text })
-    }
-    out.push({ text: " \u00b7 ", color: pal().muted })
-    return out
+    return buildFooterSegments({
+      hitRate: s.hitRate,
+      hitColor: hitColor(),
+      // 输入侧总量（不含输出）；与 V1 底部栏同口径
+      tokensTotal: s.input + s.read + s.write,
+      showBalance: !props.signals.balanceUnsupported(),
+      balanceText: balanceText(),
+      labels: { hit: t("barHit"), tok: t("barTok"), bal: t("barBal") },
+      palette: { muted: pal().muted, text: pal().text },
+    })
   })
   const segsW = createMemo(() => {
     let w = 0
