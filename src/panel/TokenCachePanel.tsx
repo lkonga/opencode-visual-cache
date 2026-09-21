@@ -10,6 +10,7 @@ import { createT, type LangCode, type Translation } from "../i18n"
 import { MAX_SAT, FALLBACK, desaturateTo, dimColor, fmt, fmtCost, num, estimateTokens, progressBar, visualWidth, visualPadEnd, truncateVisual, formatBalanceText, type TokenDist } from "../core"
 import { PLUGIN_VERSION } from "../_version"
 import type { PanelApi, PanelSignals } from "./panel-api"
+import { readFoldOpen } from "./fold-state"
 
 const MIN_PANEL_WIDTH = 20
 const DEFAULT_PANEL_WIDTH = 26
@@ -39,9 +40,12 @@ export function TokenCachePanel(props: {
   api: PanelApi
   sessionId: string
   signals: PanelSignals
+  /** 主标题折叠态的宿主默认值（无持久化状态时）。V2 传 false（全新安装默认折叠）；
+   *  V1 不传 → 初始展开 + kv 恢复 fallback false（历史行为逐字节不变）。 */
+  defaultOpen?: boolean
 }): JSX.Element {
   const [panelWidth, setPanelWidth] = createSignal(DEFAULT_PANEL_WIDTH)
-  const [open, setOpen] = createSignal(true)
+  const [open, setOpen] = createSignal(props.defaultOpen ?? true)
   const [detailOpen, setDetailOpen] = createSignal(true)
   const [modelOpen, setModelOpen] = createSignal(true)
   const [distOpen, setDistOpen] = createSignal(false)
@@ -384,7 +388,8 @@ export function TokenCachePanel(props: {
 
     // Restore fold state from persisted storage (non-critical — fire and forget)
     try {
-      setOpen(Boolean(props.api.kv.get(`${KV_PREFIX}.open`, false)))
+      // 持久化值优先；无状态/读取失败 → 宿主默认（V1 未传 defaultOpen → false，历史行为不变）
+      setOpen(readFoldOpen(props.api.kv, `${KV_PREFIX}.open`, props.defaultOpen ?? false))
       setDetailOpen(Boolean(props.api.kv.get(`${KV_PREFIX}.detail`, true)))
       setModelOpen(Boolean(props.api.kv.get(`${KV_PREFIX}.model`, true)))
       setDistOpen(Boolean(props.api.kv.get(`${KV_PREFIX}.dist`, false)))

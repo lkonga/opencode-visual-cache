@@ -4,6 +4,7 @@ import { createSignal, createEffect, onMount, onCleanup, untrack } from "solid-j
 import type { Context, PluginModule } from "./types"
 import { createPanelApi } from "./v2-panel-api"
 import { TokenCachePanel } from "../panel/TokenCachePanel"
+import { V2_DEFAULT_FOLD_OPEN } from "../panel/fold-state"
 import type { BalanceState, PanelApi, PanelSignals } from "../panel/panel-api"
 import { StatusView } from "./status"
 import { mapTheme } from "./theme"
@@ -152,6 +153,7 @@ function PluginRoot(props: {
       api={props.api}
       sessionId={props.sessionID}
       signals={props.signals}
+      defaultOpen={V2_DEFAULT_FOLD_OPEN}
     />
   )
 }
